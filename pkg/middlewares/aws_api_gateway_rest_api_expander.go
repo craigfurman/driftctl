@@ -2,6 +2,7 @@ package middlewares
 
 import (
 	"encoding/json"
+	"strconv"
 	"strings"
 
 	"github.com/cloudskiff/driftctl/pkg/resource"
@@ -18,6 +19,10 @@ type AwsApiGatewayRestApiExpander struct {
 
 type OpenAPIAwsExtensions struct {
 	GatewayResponses map[string]interface{} `json:"x-amazon-apigateway-gateway-responses"`
+}
+
+type OpenAPIAwsMethodExtensions struct {
+	Integration map[string]interface{} `json:"x-amazon-apigateway-integration"`
 }
 
 func NewAwsApiGatewayRestApiExpander(resourceFactory resource.ResourceFactory) AwsApiGatewayRestApiExpander {
@@ -83,6 +88,9 @@ func (m *AwsApiGatewayRestApiExpander) handleBodyV3(apiId string, doc *openapi3.
 					m.createApiGatewayMethodResponse(apiId, res.ResourceId(), httpMethod, statusCode, results)
 				}
 				m.createApiGatewayIntegration(apiId, res.ResourceId(), httpMethod, results)
+				if err := m.createMethodExtensionsResources(apiId, res.ResourceId(), httpMethod, method.Extensions, results); err != nil {
+					return nil
+				}
 			}
 		}
 	}
@@ -102,6 +110,9 @@ func (m *AwsApiGatewayRestApiExpander) handleBodyV2(apiId string, doc *openapi2.
 					m.createApiGatewayMethodResponse(apiId, res.ResourceId(), httpMethod, statusCode, results)
 				}
 				m.createApiGatewayIntegration(apiId, res.ResourceId(), httpMethod, results)
+				if err := m.createMethodExtensionsResources(apiId, res.ResourceId(), httpMethod, method.Extensions, results); err != nil {
+					return nil
+				}
 			}
 		}
 	}
@@ -123,6 +134,29 @@ func (m *AwsApiGatewayRestApiExpander) createExtensionsResources(apiId string, e
 	}
 	for gtwResponse := range ext.GatewayResponses {
 		m.createApiGatewayGatewayResponse(apiId, gtwResponse, results)
+	}
+	return nil
+}
+
+// Create resources based on our OpenAPIAwsMethodExtensions struct
+func (m *AwsApiGatewayRestApiExpander) createMethodExtensionsResources(apiId, resourceId, httpMethod string, extensions map[string]interface{}, results *[]*resource.Resource) error {
+	ext, err := decodeMethodExtensions(extensions)
+	if err != nil {
+		logrus.WithFields(logrus.Fields{
+			"id":   apiId,
+			"type": aws.AwsApiGatewayRestApiResourceType,
+		}).Debug("Failing to decode method extensions from the OpenAPI body attribute")
+		return err
+	}
+	if responses, exist := ext.Integration["responses"]; exist {
+		for _, response := range responses.(map[string]interface{}) {
+			if statusCode, ok := response.(map[string]interface{})["statusCode"]; ok {
+				if s, isFloat64 := statusCode.(float64); isFloat64 {
+					statusCode = strconv.FormatFloat(s, 'f', -1, 64)
+				}
+				m.createApiGatewayIntegrationResponse(apiId, resourceId, httpMethod, statusCode.(string), results)
+			}
+		}
 	}
 	return nil
 }
@@ -207,4 +241,29 @@ func (m *AwsApiGatewayRestApiExpander) createApiGatewayIntegration(apiId, resour
 		map[string]interface{}{},
 	)
 	*results = append(*results, newResource)
+}
+
+// Create aws_api_gateway_integration resource
+func (m *AwsApiGatewayRestApiExpander) createApiGatewayIntegrationResponse(apiId, resourceId, httpMethod, statusCode string, results *[]*resource.Resource) {
+	newResource := m.resourceFactory.CreateAbstractResource(
+		aws.AwsApiGatewayIntegrationResponseResourceType,
+		strings.Join([]string{"agir", apiId, resourceId, httpMethod, statusCode}, "-"),
+		map[string]interface{}{},
+	)
+	*results = append(*results, newResource)
+}
+
+// Decode openapi.Method.Extensions into our custom OpenAPIAwsMethodExtensions struct that follows AWS
+// OpenAPI addons.
+func decodeMethodExtensions(extensions map[string]interface{}) (*OpenAPIAwsMethodExtensions, error) {
+	rawExtensions, err := json.Marshal(extensions)
+	if err != nil {
+		return nil, err
+	}
+	decodedExtensions := &OpenAPIAwsMethodExtensions{}
+	err = json.Unmarshal(rawExtensions, decodedExtensions)
+	if err != nil {
+		return nil, err
+	}
+	return decodedExtensions, nil
 }
