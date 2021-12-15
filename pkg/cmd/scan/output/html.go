@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"html/template"
 	"math"
-	"os"
 	"reflect"
 	"regexp"
 	"strconv"
@@ -49,39 +48,25 @@ type HTMLTemplateParams struct {
 	FaviconBase64   string
 }
 
-func NewHTML(path string) *HTML {
-	return &HTML{path}
-}
-
-func (c *HTML) Write(analysis *analyser.Analysis) error {
-	file := os.Stdout
-	if !isStdOut(c.path) {
-		f, err := os.OpenFile(c.path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		file = f
-	}
-
+func WriteHTML(analysis *analyser.Analysis) ([]byte, error) {
 	tmplFile, err := assets.ReadFile("assets/index.tmpl")
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	styleFile, err := assets.ReadFile("assets/style.css")
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	logoSvgFile, err := assets.ReadFile("assets/driftctl_light.svg")
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	faviconFile, err := assets.ReadFile("assets/favicon.ico")
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	funcMap := template.FuncMap{
@@ -150,7 +135,7 @@ func (c *HTML) Write(analysis *analyser.Analysis) error {
 
 	tmpl, err := template.New("main").Funcs(funcMap).Parse(string(tmplFile))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	data := &HTMLTemplateParams{
@@ -170,12 +155,13 @@ func (c *HTML) Write(analysis *analyser.Analysis) error {
 		FaviconBase64:   base64.StdEncoding.EncodeToString(faviconFile),
 	}
 
-	err = tmpl.Execute(file, data)
+	var buf bytes.Buffer
+	err = tmpl.Execute(&buf, data)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return buf.Bytes(), nil
 }
 
 func distinctResourceTypes(resources []*resource.Resource) []string {

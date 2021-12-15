@@ -6,12 +6,12 @@ import (
 
 	"github.com/jmespath/go-jmespath"
 	"github.com/sirupsen/logrus"
+	"github.com/snyk/driftctl/pkg/cmd/scan/output"
 	"github.com/snyk/driftctl/pkg/memstore"
 	globaloutput "github.com/snyk/driftctl/pkg/output"
 
 	"github.com/snyk/driftctl/pkg/alerter"
 	"github.com/snyk/driftctl/pkg/analyser"
-	"github.com/snyk/driftctl/pkg/cmd/scan/output"
 	"github.com/snyk/driftctl/pkg/filter"
 	"github.com/snyk/driftctl/pkg/iac/config"
 	"github.com/snyk/driftctl/pkg/iac/terraform/state/backend"
@@ -24,8 +24,8 @@ type ScanOptions struct {
 	Detect           bool
 	From             []config.SupplierConfig
 	To               string
-	Output           []output.OutputConfig
 	Filter           *jmespath.JMESPath
+	Format           output.FormatOutput
 	Quiet            bool
 	BackendOptions   *backend.Options
 	StrictMode       bool

@@ -63,12 +63,16 @@ func NewScanCmd(opts *pkg.ScanOptions) *cobra.Command {
 			}
 
 			outputFlag, _ := cmd.Flags().GetStringSlice("output")
+			if len(outputFlag) > 0 {
+				panic("TODO improve this")
+			}
 
-			out, err := parseOutputFlags(outputFlag)
+			formatFlag, _ := cmd.Flags().GetString("format")
+			formatter, err := output.GetFormatter(formatFlag)
 			if err != nil {
 				return err
 			}
-			opts.Output = out
+			opts.Format = formatter
 
 			filterFlag, _ := cmd.Flags().GetStringArray("filter")
 
@@ -133,12 +137,16 @@ func NewScanCmd(opts *pkg.ScanOptions) *cobra.Command {
 			"  - Type =='aws_s3_bucket && Id != 'my_bucket' (excludes s3 bucket 'my_bucket')\n"+
 			"  - Attr.Tags.Terraform == 'true' (include only resources that have Tag Terraform equal to 'true')\n",
 	)
+	fl.String(
+		"format",
+		"console",
+		"TODO halp",
+	)
 	fl.StringSliceP(
 		"output",
 		"o",
-		[]string{output.Example(output.ConsoleOutputType)},
-		"Output format, by default it will write to the console\n"+
-			"Accepted formats are: "+strings.Join(output.SupportedOutputsExample(), ",")+"\n",
+		[]string{},
+		"DEPRECATED: see --format, and use redirects and pipes.",
 	)
 	fl.StringSliceP(
 		"from",
@@ -223,12 +231,6 @@ func scanRun(opts *pkg.ScanOptions) error {
 
 	alerter := alerter.NewAlerter()
 
-	// For now, we only use the global printer to print progress and information about the current scan, so unless one
-	// of the configured output should silence global output we simply use console by default.
-	if output.ShouldPrint(opts.Output, opts.Quiet) {
-		globaloutput.ChangePrinter(globaloutput.NewConsolePrinter())
-	}
-
 	providerLibrary := terraform.NewProviderLibrary()
 	remoteLibrary := common.NewRemoteLibrary()
 
@@ -289,25 +291,15 @@ func scanRun(opts *pkg.ScanOptions) error {
 	analysis.ProviderName = resourceSchemaRepository.ProviderName
 	store.Bucket(memstore.TelemetryBucket).Set("provider_name", analysis.ProviderName)
 
-	validOutput := false
-	for _, o := range opts.Output {
-		if err = output.GetOutput(o).Write(analysis); err != nil {
-			logrus.Errorf("Error writing to output %s: %v", o.String(), err.Error())
-			continue
-		}
-		validOutput = true
+	out, err := opts.Format(analysis)
+	if err != nil {
+		// TODO no
+		panic(err)
 	}
+	fmt.Println(string(out))
 
-	// Fallback to console output if all output failed
-	if !validOutput {
-		logrus.Debug("All outputs failed, fallback to console output")
-		if err = output.NewConsole().Write(analysis); err != nil {
-			return err
-		}
-	}
-
-	globaloutput.Printf(color.WhiteString("Scan duration: %s\n", analysis.Duration.Round(time.Second)))
-	globaloutput.Printf(color.WhiteString("Provider version used to scan: %s. Use --tf-provider-version to use another version.\n"), resourceSchemaRepository.ProviderVersion.String())
+	fmt.Fprintln(os.Stderr, color.WhiteString("Scan duration: %s\n", analysis.Duration.Round(time.Second)))
+	fmt.Fprintln(os.Stderr, color.WhiteString("Provider version used to scan: %s. Use --tf-provider-version to use another version.\n"), resourceSchemaRepository.ProviderVersion.String())
 
 	if !opts.DisableTelemetry {
 		tl := telemetry.NewTelemetry(&build.Build{})
@@ -315,7 +307,7 @@ func scanRun(opts *pkg.ScanOptions) error {
 	}
 
 	if !analysis.IsSync() {
-		globaloutput.Printf("\nHint: use gen-driftignore command to generate a .driftignore file based on your drifts\n")
+		fmt.Fprintln(os.Stderr, "\nHint: use gen-driftignore command to generate a .driftignore file based on your drifts\n")
 
 		return cmderrors.InfrastructureNotInSync{}
 	}
@@ -396,99 +388,6 @@ func parseFromFlag(from []string) ([]config.SupplierConfig, error) {
 	}
 
 	return configs, nil
-}
-
-func parseOutputFlags(out []string) ([]output.OutputConfig, error) {
-	result := make([]output.OutputConfig, 0, len(out))
-	for _, v := range out {
-		o, err := parseOutputFlag(v)
-		if err != nil {
-			return result, err
-		}
-		result = append(result, *o)
-	}
-	return result, nil
-}
-
-func parseOutputFlag(out string) (*output.OutputConfig, error) {
-	schemeOpts := strings.Split(out, "://")
-	if len(schemeOpts) < 2 || schemeOpts[0] == "" {
-		return nil, errors.Wrapf(
-			cmderrors.NewUsageError(
-				fmt.Sprintf(
-					"\nAccepted formats are: %s",
-					strings.Join(output.SupportedOutputsExample(), ","),
-				),
-			),
-			"Unable to parse output flag '%s'",
-			out,
-		)
-	}
-
-	o := &output.OutputConfig{
-		Key: schemeOpts[0],
-	}
-	if !output.IsSupported(o.Key) {
-		return nil, errors.Wrapf(
-			cmderrors.NewUsageError(
-				fmt.Sprintf(
-					"\nValid formats are: %s",
-					strings.Join(output.SupportedOutputsExample(), ","),
-				),
-			),
-			"Unsupported output '%s'",
-			o.Key,
-		)
-	}
-
-	opts := schemeOpts[1:]
-
-	switch o.Key {
-	case output.JSONOutputType:
-		if len(opts) != 1 || opts[0] == "" {
-			return nil, errors.Wrapf(
-				cmderrors.NewUsageError(
-					fmt.Sprintf(
-						"\nMust be of kind: %s",
-						output.Example(output.JSONOutputType),
-					),
-				),
-				"Invalid json output '%s'",
-				out,
-			)
-		}
-		o.Path = opts[0]
-	case output.HTMLOutputType:
-		if len(opts) != 1 || opts[0] == "" {
-			return nil, errors.Wrapf(
-				cmderrors.NewUsageError(
-					fmt.Sprintf(
-						"\nMust be of kind: %s",
-						output.Example(output.HTMLOutputType),
-					),
-				),
-				"Invalid html output '%s'",
-				out,
-			)
-		}
-		o.Path = opts[0]
-	case output.PlanOutputType:
-		if len(opts) != 1 || opts[0] == "" {
-			return nil, errors.Wrapf(
-				cmderrors.NewUsageError(
-					fmt.Sprintf(
-						"\nMust be of kind: %s",
-						output.Example(output.PlanOutputType),
-					),
-				),
-				"Invalid plan output '%s'",
-				out,
-			)
-		}
-		o.Path = opts[0]
-	}
-
-	return o, nil
 }
 
 func validateTfProviderVersionString(version string) error {

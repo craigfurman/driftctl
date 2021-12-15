@@ -12,8 +12,6 @@ import (
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	error2 "github.com/snyk/driftctl/pkg/terraform/error"
-
-	"github.com/snyk/driftctl/pkg/output"
 )
 
 type HomeDirInterface interface {
@@ -44,7 +42,7 @@ func (p *ProviderInstaller) Install() (string, error) {
 		logrus.WithFields(logrus.Fields{
 			"path": providerPath,
 		}).Debug("provider not found, downloading ...")
-		output.Printf("Downloading terraform provider: %s\n", p.config.Key)
+		fmt.Fprintf(os.Stderr, "Downloading terraform provider: %s\n", p.config.Key)
 		err := p.downloader.Download(
 			p.config.GetDownloadUrl(),
 			providerDir,

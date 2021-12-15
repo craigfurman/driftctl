@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"os"
 	"time"
 
 	"go.uber.org/atomic"
@@ -127,9 +128,9 @@ Loop:
 
 func (p *progress) flush() {
 	for i := 0; i < p.highestLineLength; i++ {
-		Printf(" ")
+		fmt.Fprint(os.Stderr, " ")
 	}
-	Printf("\r")
+	fmt.Fprint(os.Stderr, "\r")
 }
 
 func (p *progress) printf(format string, args ...interface{}) {
@@ -139,5 +140,5 @@ func (p *progress) printf(format string, args ...interface{}) {
 		p.highestLineLength = length
 	}
 	p.flush()
-	Printf(txt)
+	fmt.Fprint(os.Stderr, txt)
 }

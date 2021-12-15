@@ -3,7 +3,6 @@ package output
 import (
 	"encoding/json"
 	"fmt"
-	"os"
 
 	"github.com/snyk/driftctl/pkg/analyser"
 	"github.com/snyk/driftctl/pkg/resource"
@@ -47,35 +46,11 @@ type rsc struct {
 	AttributeValues map[string]interface{} `json:"values,omitempty"`
 }
 
-type Plan struct {
-	path string
-}
-
-func NewPlan(path string) *Plan {
-	return &Plan{path}
-}
-
-func (c *Plan) Write(analysis *analyser.Analysis) error {
-	file := os.Stdout
-	if !isStdOut(c.path) {
-		f, err := os.OpenFile(c.path, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0600)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		file = f
-	}
+func WritePlan(analysis *analyser.Analysis) ([]byte, error) {
 	output := plan{FormatVersion: FormatVersion}
 	output.PlannedValues.RootModule = addPlannedValues(analysis)
 	output.ResourceChanges = addResourceChanges(analysis)
-	jsonPlan, err := json.MarshalIndent(output, "", "\t")
-	if err != nil {
-		return err
-	}
-	if _, err := file.Write(jsonPlan); err != nil {
-		return err
-	}
-	return nil
+	return json.MarshalIndent(output, "", "\t")
 }
 
 func addPlannedValues(analysis *analyser.Analysis) module {

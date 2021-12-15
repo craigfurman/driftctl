@@ -20,20 +20,10 @@ import (
 	"github.com/snyk/driftctl/pkg/resource"
 )
 
-const ConsoleOutputType = "console"
-const ConsoleOutputExample = "console://"
+// TODO wat
+// `Total coverage is {{ analysis.Coverage }}`,
 
-type Console struct {
-	summary string
-}
-
-func NewConsole() *Console {
-	return &Console{
-		`Total coverage is {{ analysis.Coverage }}`,
-	}
-}
-
-func (c *Console) Write(analysis *analyser.Analysis) error {
+func WriteConsole(analysis *analyser.Analysis) ([]byte, error) {
 	if analysis.Summary().TotalDeleted > 0 {
 		var sources []string
 		groupedBySource := make(map[string][]*resource.Resource)
@@ -159,7 +149,7 @@ func (c *Console) Write(analysis *analyser.Analysis) error {
 		}
 	}
 
-	c.writeSummary(analysis)
+	writeSummary(analysis)
 
 	enumerationErrorMessage := ""
 	for _, a := range analysis.Alerts() {
@@ -175,10 +165,11 @@ func (c *Console) Write(analysis *analyser.Analysis) error {
 		_, _ = fmt.Fprintf(os.Stderr, "\n%s\n", color.YellowString(enumerationErrorMessage))
 	}
 
-	return nil
+	// TODO change all interfaces to write?
+	return nil, nil
 }
 
-func (c Console) writeSummary(analysis *analyser.Analysis) {
+func writeSummary(analysis *analyser.Analysis) {
 	boldWriter := color.New(color.Bold)
 	successWriter := color.New(color.Bold, color.FgGreen)
 	warningWriter := color.New(color.Bold, color.FgYellow)
