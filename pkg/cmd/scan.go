@@ -1,7 +1,11 @@
 package cmd
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/signal"
 	"regexp"
@@ -212,6 +216,13 @@ func NewScanCmd(opts *pkg.ScanOptions) *cobra.Command {
 		"Directory path that driftctl uses for configuration.\n",
 	)
 
+	fl.BoolVar(
+		&opts.Report,
+		"report",
+		false,
+		"Send results to Snyk backend",
+	)
+
 	return cmd
 }
 
@@ -296,6 +307,31 @@ func scanRun(opts *pkg.ScanOptions) error {
 			continue
 		}
 		validOutput = true
+	}
+
+	if opts.Report {
+		logrus.Info("sending report...")
+		snykApiURL := os.Getenv("SNYK_API")
+		snykToken := os.Getenv("SNYK_API_TOKEN")
+		reportingBody, err := json.Marshal(analysis)
+		if err != nil {
+			panic(err)
+		}
+		req, err := http.NewRequest(http.MethodPost, snykApiURL+"/api/v1/iac-drift", bytes.NewReader(reportingBody))
+		if err != nil {
+			panic(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "token "+snykToken)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			panic(err)
+		}
+		defer resp.Body.Close()
+		if resp.StatusCode != 200 {
+			respBodyBytes, _ := io.ReadAll(resp.Body)
+			panic(fmt.Errorf("expected status 200, got %d: %s", resp.StatusCode, string(respBodyBytes)))
+		}
 	}
 
 	// Fallback to console output if all output failed

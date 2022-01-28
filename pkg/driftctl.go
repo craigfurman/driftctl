@@ -34,6 +34,7 @@ type ScanOptions struct {
 	ConfigDir        string
 	DriftignorePath  string
 	Deep             bool
+	Report           bool
 }
 
 type DriftCTL struct {
